@@ -1,3 +1,32 @@
+============
+Canokey QEMU
+============
+
+Install libcanokey-qemu
+
+.. code-block:: shell
+
+   git clone https://github.com/canokeys/canokey-qemu
+   cd canokey-qemu
+   mkdir build; cd build
+   cmake .. -DCMAKE_INSTALL_PREFIX=${YOUR_PREFIX}
+   make -j`nproc`
+   make install
+
+Then enter this repo
+
+.. code-block:: shell
+
+   export PKG_CONFIG_PATH=${YOUR_PREFIX}/lib/pkgconfig # depending on your env
+   git clone https://github.com/canokeys/qemu
+   cd qemu
+   git checkout canokey
+   ./configure --enable-canokey
+   cd build && make -j`nproc`
+   ./qemu-system-x86_64 -usb -device canokey,file=${HOME}/.canokey-file
+
+Then you have a guest with canokey plugged in.
+
 ===========
 QEMU README
 ===========
