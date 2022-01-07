@@ -16,6 +16,7 @@
 #include "qapi/error.h"
 #include "hw/usb.h"
 #include "hw/qdev-properties.h"
+#include "trace.h"
 #include "desc.h"
 #include "canokey.h"
 
@@ -64,6 +65,7 @@ static const USBDesc desc_canokey = {
 /* Implement canokey-qemu functions */
 int canokey_emu_stall_ep(void *base, uint8_t ep)
 {
+    trace_canokey_emu_stall_ep(ep);
     CanoKeyState *key = base;
     uint8_t ep_in = CANOKEY_EP_IN(ep); /* INTR IN has ep 129 */
     qemu_mutex_lock(&key->ep_in_mutex[ep_in]);
@@ -75,6 +77,7 @@ int canokey_emu_stall_ep(void *base, uint8_t ep)
 
 int canokey_emu_set_address(void *base, uint8_t addr)
 {
+    trace_canokey_emu_set_address(addr);
     CanoKeyState *key = base;
     key->dev.addr = addr;
     return 0;
@@ -83,6 +86,7 @@ int canokey_emu_set_address(void *base, uint8_t addr)
 int canokey_emu_prepare_receive(
         void *base, uint8_t ep, uint8_t *pbuf, uint16_t size)
 {
+    trace_canokey_emu_prepare_receive(ep, size);
     CanoKeyState *key = base;
     /*
      * No mutex here because it is usually called by
@@ -96,6 +100,7 @@ int canokey_emu_prepare_receive(
 int canokey_emu_transmit(
         void *base, uint8_t ep, const uint8_t *pbuf, uint16_t size)
 {
+    trace_canokey_emu_transmit(ep, size);
     CanoKeyState *key = base;
     uint8_t ep_in = CANOKEY_EP_IN(ep); /* INTR IN has ep 129 */
     qemu_mutex_lock(&key->ep_in_mutex[ep_in]);
@@ -114,6 +119,7 @@ uint32_t canokey_emu_get_rx_data_size(void *base, uint8_t ep)
 
 static void *canokey_thread(void *arg)
 {
+    trace_canokey_thread_start();
     CanoKeyState *key = arg;
 
     while (true) {
@@ -124,6 +130,7 @@ static void *canokey_thread(void *arg)
 
         /* Exit thread check */
         if (key->stop_thread) {
+            trace_canokey_thread_stop();
             key->stop_thread = false;
             break;
         }
@@ -135,6 +142,7 @@ static void *canokey_thread(void *arg)
 
 static void canokey_handle_reset(USBDevice *dev)
 {
+    trace_canokey_handle_reset();
     CanoKeyState *key = CANOKEY(dev);
     for (int i = 0; i != CANOKEY_EP_NUM; ++i) {
         key->ep_in_status[i] = CANOKEY_EP_IN_WAIT;
@@ -146,6 +154,7 @@ static void canokey_handle_reset(USBDevice *dev)
 static void canokey_handle_control(USBDevice *dev, USBPacket *p,
                int request, int value, int index, int length, uint8_t *data)
 {
+    trace_canokey_handle_control_setup(request, value, index, length);
     CanoKeyState *key = CANOKEY(dev);
 
     canokey_emu_setup(request, value, index, length);
@@ -155,6 +164,7 @@ static void canokey_handle_control(USBDevice *dev, USBPacket *p,
     uint32_t dir_in = request & DeviceRequest;
     if (!dir_in) {
         /* OUT */
+        trace_canokey_handle_control_out();
         qemu_mutex_lock(&key->key_mutex);
         if (key->ep_out[0] != NULL) {
             memcpy(key->ep_out[0], data, length);
@@ -179,6 +189,8 @@ static void canokey_handle_control(USBDevice *dev, USBPacket *p,
     p->actual_length = key->ep_in_size[ep_in];
 
     qemu_mutex_unlock(&key->ep_in_mutex[ep_in]);
+
+    trace_canokey_handle_control_in(p->actual_length);
 }
 
 static void canokey_handle_data(USBDevice *dev, USBPacket *p)
@@ -190,9 +202,12 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
     uint32_t in_len;
     switch (p->pid) {
     case USB_TOKEN_OUT:
+        trace_canokey_handle_data_out(ep_out);
         qemu_mutex_lock(&key->key_mutex);
         if (p->iov.size > key->ep_out_size[ep_out]) {
             /* unlikely we will reach here, but check still needed */
+            trace_canokey_handle_data_out_err(
+                    ep_out, p->iov.size, key->ep_out_size[ep_out]);
             p->status = USB_RET_NAK;
             qemu_mutex_unlock(&key->key_mutex);
             break;
@@ -213,6 +228,7 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
                 qemu_mutex_unlock(&key->ep_in_mutex[ep_in]);
                 break;
             }
+            trace_canokey_handle_data_in(ep_in);
             if (key->ep_in_status[ep_in] == CANOKEY_EP_IN_STALL) {
                 p->status = USB_RET_STALL;
             }
@@ -243,6 +259,7 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
 
 static void canokey_realize(USBDevice *base, Error **errp)
 {
+    trace_canokey_realize();
     CanoKeyState *key = CANOKEY(base);
 
     if (key->file == NULL) {
@@ -274,6 +291,7 @@ static void canokey_realize(USBDevice *base, Error **errp)
 
 static void canokey_unrealize(USBDevice *base)
 {
+    trace_canokey_unrealize();
     CanoKeyState *key = CANOKEY(base);
 
     /* Thread */
