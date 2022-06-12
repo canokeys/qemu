@@ -104,6 +104,13 @@ int canokey_emu_transmit(
     key->ep_in_size[ep_in] += size;
     key->ep_in_state[ep_in] = CANOKEY_EP_IN_READY;
     /*
+     * wake up controller if we NAKed IN token before
+     * Note: this is a quirk for CanoKey CTAPHID
+     */
+    if (ep_in == CANOKEY_EMU_EP_CTAPHID &&
+            key->ep_in_pointer[ep_in] != NULL)
+        usb_wakeup(key->ep_in_pointer[ep_in], 0);
+    /*
      * ready for more data in device loop
      *
      * Note: this is a quirk for CanoKey CTAPHID
@@ -135,6 +142,7 @@ static void canokey_handle_reset(USBDevice *dev)
         key->ep_in_state[i] = CANOKEY_EP_IN_WAIT;
         key->ep_in_pos[i] = 0;
         key->ep_in_size[i] = 0;
+        key->ep_in_pointer[i] = NULL;
     }
     canokey_emu_reset();
 }
@@ -163,6 +171,8 @@ static void canokey_handle_control(USBDevice *dev, USBPacket *p,
     switch (key->ep_in_state[0]) {
     case CANOKEY_EP_IN_WAIT:
         p->status = USB_RET_NAK;
+        /* store pointer here for later emu_transmit wakeup */
+        key->ep_in_pointer[0] = p->ep;
         break;
     case CANOKEY_EP_IN_STALL:
         p->status = USB_RET_STALL;
@@ -208,6 +218,22 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
             key->ep_out_size[ep_out] = out_len;
             canokey_emu_data_out(ep_out, NULL);
         }
+        /*
+         * Note: this is a quirk for CanoKey CTAPHID
+         *
+         * There is one code path that uses this device loop
+         * INTR IN -> useful data_in and useless device_loop -> NAKed
+         * INTR OUT -> useful device loop -> transmit -> wakeup
+         *   (this one thanks to both data_in and data_out being called)
+         * the next INTR IN -> actual data to guest
+         *
+         * if there is no such device loop, there would be no further
+         * INTR IN, no device loop, no transmit hence no usb_wakeup
+         * then qemu would hang
+         */
+        if (ep_in == CANOKEY_EMU_EP_CTAPHID) {
+            canokey_emu_device_loop(); /* may call transmit multiple times */
+        }
         break;
     case USB_TOKEN_IN:
         if (key->ep_in_pos[ep_in] == 0) { /* first time IN */
@@ -218,6 +244,8 @@ static void canokey_handle_data(USBDevice *dev, USBPacket *p)
         case CANOKEY_EP_IN_WAIT:
             /* NAK for early INTR IN */
             p->status = USB_RET_NAK;
+            /* store pointer here for later emu_transmit wakeup */
+            key->ep_in_pointer[ep_in] = p->ep;
             break;
         case CANOKEY_EP_IN_STALL:
             p->status = USB_RET_STALL;

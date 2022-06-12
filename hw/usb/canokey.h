@@ -55,6 +55,7 @@ typedef struct CanoKeyState {
      */
     uint32_t ep_in_pos[CANOKEY_EP_NUM];
     CanoKeyEPState ep_in_state[CANOKEY_EP_NUM];
+    USBEndpoint *ep_in_pointer[CANOKEY_EP_NUM];
 
     /* OUT pointer to canokey recv buffer */
     uint8_t *ep_out[CANOKEY_EP_NUM];
