@@ -1,3 +1,9 @@
+============
+Canokey QEMU
+============
+
+It is now upstreamed. See `<https://www.qemu.org/docs/master/system/devices/canokey.html>`_ for more details.
+
 ===========
 QEMU README
 ===========
